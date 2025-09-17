@@ -63,6 +63,104 @@ class COMPortTester:
         if not self.serial_conn or not self.serial_conn.is_open:
             print("✗ Serial connection not established")
             return None
+    
+    def test_throughput_device(self, duration=10):
+        """Test throughput with a connected device (not loopback)"""
+        print(f"\n--- Device Throughput Test ---")
+        print(f"Measuring data exchange with device for {duration} seconds")
+        
+        if not self.serial_conn or not self.serial_conn.is_open:
+            print("✗ Serial connection not established")
+            return None
+        
+        bytes_sent = 0
+        bytes_received = 0
+        messages_sent = 0
+        start_time = time.time()
+        
+        # Start receiver thread
+        self.running = True
+        received_data = []
+        
+        def receiver():
+            while self.running:
+                try:
+                    data = self.serial_conn.read(1024)
+                    if data:
+                        received_data.append(data)
+                except:
+                    break
+        
+        receiver_thread = threading.Thread(target=receiver)
+        receiver_thread.daemon = True
+        receiver_thread.start()
+        
+        # Send commands/data continuously
+        try:
+            message_counter = 0
+            while time.time() - start_time < duration:
+                # Send a command or data packet
+                message = f"DATA{message_counter:06d}\n".encode()
+                self.serial_conn.write(message)
+                bytes_sent += len(message)
+                messages_sent += 1
+                message_counter += 1
+                
+                # Small delay to prevent overwhelming the device
+                time.sleep(0.05)  # 50ms between messages
+                
+        except KeyboardInterrupt:
+            print("\nTest interrupted by user")
+        except Exception as e:
+            print(f"Error during device throughput test: {e}")
+        
+        # Stop receiver
+        self.running = False
+        time.sleep(0.2)  # Allow receiver to finish
+        
+        end_time = time.time()
+        actual_duration = end_time - start_time
+        
+        # Calculate received bytes
+        for data in received_data:
+            bytes_received += len(data)
+        
+        # Calculate throughput
+        if actual_duration > 0:
+            tx_throughput_bps = bytes_sent / actual_duration
+            rx_throughput_bps = bytes_received / actual_duration
+            message_rate = messages_sent / actual_duration
+            
+            print(f"\n--- Device Throughput Results ---")
+            print(f"Test Duration: {actual_duration:.2f} seconds")
+            print(f"Messages Sent: {messages_sent}")
+            print(f"Message Rate: {message_rate:.1f} messages/sec")
+            print(f"Bytes Sent: {bytes_sent:,}")
+            print(f"Bytes Received: {bytes_received:,}")
+            print(f"TX Rate: {tx_throughput_bps:.0f} bytes/sec ({tx_throughput_bps*8:.0f} bits/sec)")
+            print(f"RX Rate: {rx_throughput_bps:.0f} bytes/sec ({rx_throughput_bps*8:.0f} bits/sec)")
+            
+            if bytes_sent > 0:
+                response_ratio = bytes_received / bytes_sent
+                print(f"Response Ratio: {response_ratio:.2f} (RX/TX)")
+            
+            # Show sample received data
+            if received_data:
+                print(f"Sample received data:")
+                for i, data in enumerate(received_data[:3]):
+                    print(f"  Chunk {i+1}: {data[:100]}...")  # First 100 bytes
+            
+            return {
+                'tx_throughput_bps': tx_throughput_bps,
+                'rx_throughput_bps': rx_throughput_bps,
+                'bytes_sent': bytes_sent,
+                'bytes_received': bytes_received,
+                'message_rate': message_rate,
+                'duration': actual_duration,
+                'response_ratio': bytes_received / bytes_sent if bytes_sent > 0 else 0
+            }
+        
+        return None
         
         latencies = []
         errors = 0
@@ -221,18 +319,98 @@ class COMPortTester:
             response = self.serial_conn.readline()
             
             if response == test_message:
-                print("✓ Loopback test PASSED")
+                print("✓ Perfect loopback detected")
                 return True
             elif response:
-                print(f"✗ Loopback test FAILED - Received: {response}")
-                return False
+                print(f"✓ Device responding - Received: {response}")
+                print("  This appears to be a device that modifies or generates data")
+                
+                # Ask user if they want to continue with device testing
+                try:
+                    user_input = input("Continue with device communication tests? (y/n): ").strip().lower()
+                    return user_input in ['y', 'yes']
+                except KeyboardInterrupt:
+                    return False
             else:
-                print("✗ Loopback test FAILED - No response")
+                print("✗ No response from device")
                 return False
                 
         except Exception as e:
             print(f"✗ Loopback test ERROR: {e}")
             return False
+
+    def device_communication_test(self, num_tests=10):
+        """Test communication with a device (not perfect loopback)"""
+        print(f"\n--- Device Communication Test ---")
+        print(f"Testing communication latency with connected device")
+        
+        if not self.serial_conn or not self.serial_conn.is_open:
+            print("✗ Serial connection not established")
+            return None
+        
+        latencies = []
+        responses = []
+        errors = 0
+        
+        for i in range(num_tests):
+            try:
+                # Clear input buffer
+                self.serial_conn.reset_input_buffer()
+                
+                # Send a simple command and measure response time
+                test_command = f"TEST{i:03d}\n".encode()
+                start_time = time.time()
+                self.serial_conn.write(test_command)
+                
+                # Wait for any response
+                response = self.serial_conn.read(1024)  # Read up to 1024 bytes
+                end_time = time.time()
+                
+                if response:
+                    latency_ms = (end_time - start_time) * 1000
+                    latencies.append(latency_ms)
+                    responses.append(response)
+                    print(f"Command {i+1}: {latency_ms:.2f} ms - Got {len(response)} bytes")
+                else:
+                    errors += 1
+                    print(f"Command {i+1}: TIMEOUT")
+                
+                time.sleep(0.2)  # Delay between commands
+                
+            except Exception as e:
+                errors += 1
+                print(f"Command {i+1}: ERROR - {e}")
+        
+        # Show some sample responses
+        if responses:
+            print(f"\nSample responses:")
+            for i, resp in enumerate(responses[:3]):
+                print(f"  Response {i+1}: {resp}")
+        
+        # Calculate statistics
+        if latencies:
+            avg_latency = statistics.mean(latencies)
+            min_latency = min(latencies)
+            max_latency = max(latencies)
+            jitter = statistics.stdev(latencies) if len(latencies) > 1 else 0
+            
+            print(f"\n--- Device Communication Results ---")
+            print(f"Average Response Time: {avg_latency:.2f} ms")
+            print(f"Minimum Response Time: {min_latency:.2f} ms")
+            print(f"Maximum Response Time: {max_latency:.2f} ms")
+            print(f"Jitter (StdDev): {jitter:.2f} ms")
+            print(f"Success Rate: {len(latencies)}/{num_tests} ({len(latencies)/num_tests*100:.1f}%)")
+            
+            return {
+                'average': avg_latency,
+                'min': min_latency,
+                'max': max_latency,
+                'jitter': jitter,
+                'success_rate': len(latencies)/num_tests
+            }
+        else:
+            print("✗ No successful communications")
+            return None
 
 
 def list_com_ports():
@@ -251,7 +429,7 @@ def main():
     parser = argparse.ArgumentParser(description='COM Port Throughput and Latency Tester')
     parser.add_argument('--port', '-p', help='COM port (e.g., COM1, /dev/ttyUSB0)')
     parser.add_argument('--baudrate', '-b', type=int, default=57600, help='Baud rate (default: 9600)')
-    parser.add_argument('--timeout', '-t', type=float, default=1.0, help='Timeout in seconds (default: 1.0)')
+    parser.add_argument('--timeout', '-t', type=float, default=10, help='Timeout in seconds (default: 1.0)')
     parser.add_argument('--list-ports', '-l', action='store_true', help='List available COM ports')
     
     args = parser.parse_args()
@@ -305,8 +483,13 @@ def main():
             # Run throughput test
             tester.test_throughput(duration=5, packet_size=1024)
         else:
-            print("\nSkipping throughput tests - loopback not detected")
-            print("Connect TX to RX for full testing, or test with external device")
+            print("\nRunning device communication tests instead...")
+            
+            # Test device communication
+            tester.device_communication_test(num_tests=15)
+            
+            # Test device throughput
+            tester.test_throughput_device(duration=5)
         
         print(f"\n{'='*50}")
         print("Testing completed")
