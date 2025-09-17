@@ -1,7 +1,0 @@
-{
-  "transmission_interval": 2,
-  "data_size": 2000,
-  "port_base": "COM3",
-  "port_rover": "COM4",
-  "baudrate": 9600
-}
