@@ -6,7 +6,7 @@ from multiprocessing import Process, Queue
 import queue
 
 # Hardcoded configuration
-transmission_interval = 5
+transmission_interval = 1
 data_size = 100
 port = "COM10"
 baud = 57600
@@ -60,16 +60,19 @@ def reception_process(rx_queue, port, baud):
                         parts = data.split("$")
                         if len(parts) >= 3:
                             msg_id = parts[0]
-                            sent_time = parts[1]
+                            sent_time = int(parts[1])
                             payload = parts[2]
                             recv_time = time.time_ns()
+                            
+                            # Calculate delay
+                            delay = (recv_time - sent_time) / 1_000_000_000  # Convert to seconds
                             
                             # Prepare response with receive timestamp
                             response = f"{msg_id}${sent_time}${recv_time}"
                             
                             # Send response back
                             ser_rx.write(response.encode("utf-8"))
-                            print(f"[Rover RX] Responded to message {msg_id}")
+                            print(f"[Rover RX] Message {msg_id} Delay {delay:.6f} seconds")
                             
                     except Exception as e:
                         print(f"[Rover RX] Error processing message: {e}")
