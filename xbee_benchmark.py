@@ -206,15 +206,23 @@ class XBeeBenchmark:
         msg_type = message['type']
         
         if msg_type == self.MSG_PING:
-            # Respond with PONG
-            self.send_message(self.MSG_PONG, message['data_size'], message['payload'])
+            # Respond with PONG, preserving original timestamp for latency calculation
+            original_timestamp = struct.pack('<d', message['timestamp'])
+            self.send_message(self.MSG_PONG, message['data_size'], original_timestamp)
             if self.mode == 'slave':
                 print(f"PING received ({message['data_size']} bytes) -> PONG sent")
             
         elif msg_type == self.MSG_PONG:
-            # Calculate latency
-            latency = message['rx_time'] - message['timestamp']
-            self.latency_measurements.append(latency * 1000)  # Convert to ms
+            # Calculate latency using original timestamp from payload
+            try:
+                if len(message['payload']) >= 8:
+                    original_timestamp = struct.unpack('<d', message['payload'][:8])[0]
+                    latency = message['rx_time'] - original_timestamp
+                    self.latency_measurements.append(latency * 1000)  # Convert to ms
+                else:
+                    print("PONG message missing original timestamp")
+            except Exception as e:
+                print(f"Error calculating latency: {e}")
             
         elif msg_type == self.MSG_DATA:
             # Data reception for bandwidth testing
