@@ -1,190 +1,108 @@
-# XBee Network Benchmark Tool
+# RF Latency Testing Script
 
-A comprehensive Python tool for benchmarking XBee module performance, including latency and bandwidth tests with bidirectional communication support.
+## Setup Instructions
 
----
+1. **Install Python Dependencies**
+   ```bash
+   pip install pyserial
+   ```
 
-## Features
-
-* **Automatic Bandwidth Measurement**
-* **Latency Testing** with configurable data sizes and intervals
-* **Bidirectional Communication** support (Master/Slave)
-* **Real-time Statistics**
-* **Result Reporting** between nodes
-
----
-
-## Requirements
-
-* Python 3.x
-* `pyserial` module
-
-  ```bash
-  pip install pyserial
-  ```
-* XBee modules connected to your system via serial (COM) ports
-
----
-
-## Installation
-
-1. Clone or download this repository.
-2. Ensure Python 3 and `pyserial` are installed.
-3. Connect XBee modules to available COM ports.
-
----
+2. **Identify COM Ports**
+   - Windows: Check Device Manager for COM ports (e.g., COM3, COM4)
+   - Linux: Check `/dev/ttyUSB0`, `/dev/ttyACM0`, etc.
 
 ## Usage
 
+### On Base Laptop (Transmitter):
 ```bash
-python xbee_benchmark.py --port COM3 --mode master
-python xbee_benchmark.py --port COM4 --mode slave
+python rf_latency_test.py --mode base --port COM3
 ```
 
-### Command-line Options
-
-| Option              | Description                                     | Default  |
-| ------------------- | ----------------------------------------------- | -------- |
-| `--port` / `-p`     | Serial port for XBee (e.g., COM3, /dev/ttyUSB0) | Required |
-| `--baudrate` / `-b` | Baud rate for serial communication              | 9600     |
-| `--mode` / `-m`     | Operation mode (`master` or `slave`)            | master   |
-| `--node-id` / `-n`  | Node identifier (single character)              | A        |
-
----
-
-## Node Modes
-
-### Master Node
-
-* Initiates tests and sends `PING` messages for latency measurement.
-* Sends continuous data for bandwidth measurement.
-* Collects and displays results from Slave node.
-* Example:
-
-  ```bash
-  python xbee_benchmark.py --port COM3 --mode master
-  ```
-
-### Slave Node
-
-* Responds to Master requests:
-
-  * Replies with `PONG` to `PING`
-  * Receives data for bandwidth calculation
-* Example:
-
-  ```bash
-  python xbee_benchmark.py --port COM4 --mode slave
-  ```
-
----
-
-## Message Format
-
-All messages use the following standardized format:
-
-```
-$$[MSG_TYPE][NODE_ID][TIMESTAMP][DATA_SIZE][PAYLOAD]##
+### On Rover Laptop (Receiver):
+```bash
+python rf_latency_test.py --mode rover --port COM4
 ```
 
-* `MSG_TYPE`: 4-byte identifier (`PING`, `PONG`, `DATA`, `SYNC`, `RSLT`)
-* `NODE_ID`: Single character node identifier
-* `TIMESTAMP`: 8-byte float representing Unix time
-* `DATA_SIZE`: 2-byte unsigned short
-* `PAYLOAD`: Optional message payload
-* Markers `$$` and `##` denote message start and end
-
----
-
-## Tests
-
-### Latency Test
-
-* Sends `PING` messages and calculates round-trip time from `PONG`.
-* Configurable:
-
-  * `data_size` (bytes)
-  * `interval` (seconds)
-  * Duration (default 10–15s per test)
-* Example output:
-
-  ```
-  Avg Latency: 12.34 ms
-  Min Latency: 10.12 ms
-  Max Latency: 15.67 ms
-  ```
-
-### Bandwidth Test
-
-* Continuously sends `DATA` messages to measure throughput.
-* Reports:
-
-  * Bytes sent
-  * Time elapsed
-  * Bandwidth (bytes/sec and KB/s)
-* Example output:
-
-  ```
-  Bytes sent: 10240
-  Bandwidth: 512.00 KB/s
-  ```
-
----
-
-## Real-time Statistics
-
-* Updates every 5 seconds
-* Displays:
-
-  * TX/RX bytes
-  * Receive bandwidth
-  * Recent average latency (last 10 measurements)
-
----
-
-## Comprehensive Benchmark
-
-* Master node runs multiple latency tests and a bandwidth test.
-* Slave node continuously responds.
-* Master node collects results and sends them to Slave.
-* Results include:
-
-  * Node ID and mode
-  * Latency test details
-  * Bandwidth measurements
-  * Timestamp
-
----
-
-## Example Results
-
-```
-=== Results from Node B ===
-Node ID: B
-Mode: slave
-Timestamp: 2025-09-18T15:00:00
-
---- Latency Test Results ---
-Data Size: 8 bytes, Interval: 0.1s, Avg Latency: 12.34 ms
-Data Size: 16 bytes, Interval: 0.1s, Avg Latency: 13.56 ms
-
---- Bandwidth Test Results ---
-Duration: 20.00 seconds
-Bytes Sent: 10240
-Bandwidth: 512.00 KB/s
+### Optional Parameters:
+```bash
+python rf_latency_test.py --mode base --port COM3 --baudrate 921600 --debug
 ```
 
----
+## Running the Test
 
-## Stopping the Tool
+1. **Start the rover first**:
+   ```bash
+   python rf_latency_test.py --mode rover --port COM4
+   ```
 
-* Press `Ctrl+C` to stop either Master or Slave node.
-* The tool will gracefully close serial connections.
+2. **Then start the base** (within a few seconds):
+   ```bash
+   python rf_latency_test.py --mode base --port COM3 --baudrate 921600
+   ```
 
----
+3. **Wait for synchronization**: The scripts will sync with each other automatically.
 
-## Notes
+4. **Test execution**: The base will send test data in multiple sizes (64, 128, 256, 512, 1024 bytes), each size tested 10 times for accuracy.
 
-* Ensure COM ports are correctly identified before running.
-* Slave node must be running before starting Master node for proper communication.
-* Test parameters (data sizes, intervals, durations) can be adjusted in the script.
+## Output
+
+Results are saved to `output.json` in this format:
+
+```json
+{
+  "data": [
+    {
+      "timestamp": "2025-09-24T10:30:00.123456",
+      "timestamp_ns": 1727168200123456789,
+      "location": {
+        "base_coordinate": "0.000000,0.000000",
+        "rover_coordinate": "0.000000,0.000000"
+      },
+      "64": {
+        "latency": "1.25ms"
+      },
+      "128": {
+        "latency": "2.30ms"
+      },
+      "256": {
+        "latency": "4.20ms"
+      },
+      "512": {
+        "latency": "8.80ms"
+      },
+      "1024": {
+        "latency": "15.40ms"
+      }
+    }
+  ]
+}
+```
+
+## Key Features
+
+- **Half-duplex communication**: Properly handles timing for half-duplex RF modules
+- **Accurate timing**: Uses nanosecond timestamps for precise latency measurements
+- **Multiple test sizes**: Tests 64, 128, 256, 512, and 1024 byte packets
+- **Statistical averaging**: Each packet size is tested 10 times for accuracy
+- **GPS placeholder**: `get_gps()` function ready for GPS integration
+- **JSON logging**: Results append to `output.json` for historical tracking
+- **Synchronization**: Automatic sync between base and rover before testing
+
+## Troubleshooting
+
+- **Connection issues**: Check COM port names and ensure RF modules are properly connected
+- **Sync failures**: Make sure both scripts start within a few seconds of each other
+- **Timeout errors**: Increase the timeout value in the script if your RF link is slow
+- **Permission errors**: On Linux, you may need `sudo` or add user to `dialout` group
+
+## GPS Integration
+
+To implement GPS functionality, modify the `get_gps()` function to interface with your GPS module/service and return actual coordinates in the format:
+
+```python
+{
+    "latitude": "40.123456",
+    "longitude": "-74.123456", 
+    "altitude": "100.5"
+}
+```
